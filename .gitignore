@@ -1,2 +1,12 @@
-bin 
-obj
+bin/
+obj/
+publish/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+
+# Build and package output
+*.nupkg
