@@ -1,7 +1,7 @@
 # RightClickConvert
 
-A Windows file converter that lives in the Explorer context menu. Right-click a file,
-pick **Convert**, choose a target format, and the converted file appears next to the
+A Windows file converter present in the Right Click Menu.
+Right-click a file, pick **Convert**, choose a target format, and the converted file appears next to the
 original.
 
 Documents go through a headless LibreOffice process; images are converted in-process
@@ -19,12 +19,6 @@ with ImageSharp. Nothing is uploaded anywhere.
 | `.png` `.jpg` `.jpeg` `.webp` `.bmp` `.tif` `.tiff` `.gif` | PNG, JPEG, WebP, PDF |
 | `.svg` | PDF, PNG, JPEG |
 
-A file is never offered its own format. Run `RightClickConvert.exe --list` to print the
-exact matrix.
-
-Conversions are always **within a document type** — that is a LibreOffice constraint, not
-a missing feature. There is no `.docx` → `.pptx` or `.xlsx` → `.docx`, because no such
-import/export path exists.
 
 ---
 
@@ -34,10 +28,9 @@ import/export path exists.
 |---|---|
 | Windows | 10 build 19041 or later |
 | [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download) | required |
-| [LibreOffice](https://www.libreoffice.org/download/) | required for **document** conversions only |
+| [LibreOffice](https://www.libreoffice.org/download/) | required for **document** conversions|
 
-Image conversions (`png`/`jpg`/`webp`) work without LibreOffice installed. Everything else
-needs it. The app finds LibreOffice via the registry (`HKLM\SOFTWARE\LibreOffice\UNO\InstallPath`)
+Image conversions (`png`/`jpg`/`webp`) work without LibreOffice installed, Documents need it however. The app finds LibreOffice via the registry (`HKLM\SOFTWARE\LibreOffice\UNO\InstallPath`)
 and falls back to the standard Program Files locations.
 
 ---
@@ -69,7 +62,7 @@ Stop-Process -Name explorer -Force
 ```
 
 Always run this **before** deleting the files. Removing the executable first orphans the
-registry entries, leaving menu items that silently do nothing.
+registry entries, leaving menu items that do nothing.
 
 ---
 
@@ -88,7 +81,7 @@ The `--` separator matters: without it a filename beginning with `-` is parsed a
 
 ## How it works
 
-### Two engines
+### Two parts
 
 Routing is by **conversion pair**, not by file type:
 
@@ -97,21 +90,7 @@ raster input AND target is png/jpg/webp  ->  ImageSharp
 everything else                          ->  LibreOffice
 ```
 
-That split is why `jpg → png` stays in-process while `svg → png` and `png → pdf` go to
-LibreOffice — ImageSharp can neither rasterise vectors nor write PDFs.
-
-### One source of truth
-
-[`Formats.cs`](src/RightClickConvert/Formats.cs) maps every input extension to its targets,
-each carrying a label, an engine, and a LibreOffice filter string. Both runtime dispatch
-and the Explorer submenus are generated from it, so the menu cannot offer a conversion the
-code does not implement. Filter names were verified against the filter registry
-(`share/registry/*.xcd`) of LibreOffice 26.2.
-
-The module prefix on the PDF filters is load-bearing — passing `writer_pdf_Export` for a
-spreadsheet makes LibreOffice exit 0 having produced nothing.
-
-### Details that matter
+### Notes
 
 - **Private LibreOffice profile.** Each conversion runs with
   `-env:UserInstallation=...`. Sharing the default profile makes headless conversion
@@ -143,44 +122,6 @@ src/RightClickConvert/
     ConsoleHelper.cs       Parent-console attach for terminal use
 ```
 
----
-
-## Development
-
-```powershell
-dotnet build
-dotnet run --project src\RightClickConvert -- --list
-```
-
-The project is a **WinExe** so Explorer never flashes a console window. That also means
-console output is invisible from a terminal, which `ConsoleHelper.AttachToParent()` works
-around by attaching to the parent console at startup.
-
-Testing a conversion without touching the registry:
-
-```powershell
-& "C:\Tools\RightClickConvert\RightClickConvert.exe" --to pdf -- "C:\path\to\file.docx"
-```
-
----
-
-## Troubleshooting
-
-**Menu doesn't appear.** Check the entries exist, then restart Explorer:
-
-```powershell
-Get-ChildItem HKCU:\Software\Classes\SystemFileAssociations |
-  Where-Object { Test-Path "$($_.PSPath)\shell\RightClickConvert" } |
-  Measure-Object
-```
-
-**A conversion fails.** `%LOCALAPPDATA%\RightClickConvert\log.txt` records the full
-`soffice` command line, its exit code, and stderr.
-
-**Menu items do nothing.** The executable moved. Re-run `--install` from its new location.
-
----
-
 ## Known limitations
 
 - **`image → PDF` produces an A4 page**, not a page sized to the image, so a small image
@@ -192,27 +133,3 @@ Get-ChildItem HKCU:\Software\Classes\SystemFileAssociations |
 - **HEIC/HEIF is not supported.** LibreOffice registers no HEIC import filter and
   ImageSharp cannot decode it; support would need `libheif` or the Windows HEIF codec.
 
----
-
-## Licensing notes
-
-- **ImageSharp is pinned to 3.1.x** deliberately. Version 4.x requires a paid Six Labors
-  license key and warns on every build. 3.1.x is the Six Labors Split License — free for
-  personal and open-source use; commercial use above their revenue threshold requires a
-  license.
-- **Notifications use the classic Win32 toast API** via
-  `Microsoft.Toolkit.Uwp.Notifications`. The Windows App SDK was removed: it was
-  referenced solely for toasts and accounted for roughly 140 MB of publish output —
-  including ONNX Runtime and DirectML — that this app never used. Dropping it took the
-  framework-dependent publish from **157.6 MB / 63 files to 28.0 MB / 13 files**. The
-  package is in maintenance mode; the zero-dependency alternative is
-  `Windows.UI.Notifications` directly, which costs roughly 150 lines of `IShellLink`
-  interop to register the AUMID by hand.
-- **`System.Drawing.Common` is pinned to 9.0.0** to override the 4.7.0 that the
-  notifications package pulls transitively, which carries a critical advisory
-  (GHSA-rxg9-xrhp-64gj).
-- **LibreOffice is not bundled** and must be installed separately.
-
-Of the remaining 28 MB, 23.7 MB is `Microsoft.Windows.SDK.NET.dll` — the WinRT
-projections that come with the `net10.0-windows...` target framework. Trimming reduces it
-substantially if size matters further.
